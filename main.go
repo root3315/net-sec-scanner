@@ -103,11 +103,12 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	scannerConfig := scanner.Config{
-		TargetIP:    ipAddr,
-		Ports:       ports,
-		Timeout:     timeout,
-		Concurrency: concurrency,
-		Verbose:     verbose,
+		TargetIP:      ipAddr,
+		Ports:         ports,
+		Timeout:       timeout,
+		Concurrency:   concurrency,
+		Verbose:       verbose,
+		ServiceDetect: serviceDetect,
 	}
 
 	netScanner := scanner.NewNetworkScanner(scannerConfig)
@@ -125,16 +126,6 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Scan error: %v\n", err)
 		os.Exit(1)
-	}
-
-	if serviceDetect && len(results.OpenPorts) > 0 {
-		if verbose {
-			fmt.Println("\nPerforming service detection...")
-		}
-		for i := range results.OpenPorts {
-			service := detectService(ipAddr, results.OpenPorts[i].Port, timeout)
-			results.OpenPorts[i].Service = service
-		}
 	}
 
 	vulnerabilities := []report.Vulnerability{}
@@ -283,33 +274,6 @@ func resolveHost(host string) (string, error) {
 	return "", fmt.Errorf("no IP address found for host: %s", host)
 }
 
-func detectService(host string, port int, timeout time.Duration) string {
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, port), timeout)
-	if err != nil {
-		return "unknown"
-	}
-	defer conn.Close()
-
-	conn.SetDeadline(time.Now().Add(timeout))
-
-	service := scanner.IdentifyService(port, nil)
-	if service != "unknown" {
-		return service
-	}
-
-	banner := make([]byte, 1024)
-	n, err := conn.Read(banner)
-	if err == nil && n > 0 {
-		bannerStr := strings.TrimSpace(string(banner[:n]))
-		if len(bannerStr) > 50 {
-			bannerStr = bannerStr[:50] + "..."
-		}
-		return fmt.Sprintf("banner: %s", bannerStr)
-	}
-
-	return "unknown"
-}
-
 func checkVulnerabilities(openPorts []scanner.PortResult) []report.Vulnerability {
 	var vulns []report.Vulnerability
 
@@ -360,7 +324,11 @@ func printSummary(results scanner.ScanResults) {
 			if service == "" {
 				service = scanner.IdentifyService(port.Port, nil)
 			}
-			fmt.Printf("  %d/tcp\t%s\n", port.Port, service)
+			if port.Banner != "" {
+				fmt.Printf("  %d/tcp\t%s\t[%s]\n", port.Port, service, port.Banner)
+			} else {
+				fmt.Printf("  %d/tcp\t%s\n", port.Port, service)
+			}
 		}
 	}
 }

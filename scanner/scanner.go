@@ -3,6 +3,7 @@ package scanner
 import (
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,6 +34,7 @@ type PortResult struct {
 	Port    int
 	Status  PortStatus
 	Service string
+	Banner  string
 	Latency time.Duration
 }
 
@@ -45,11 +47,12 @@ type ScanResults struct {
 }
 
 type Config struct {
-	TargetIP    string
-	Ports       []int
-	Timeout     time.Duration
-	Concurrency int
-	Verbose     bool
+	TargetIP      string
+	Ports         []int
+	Timeout       time.Duration
+	Concurrency   int
+	Verbose       bool
+	ServiceDetect bool
 }
 
 type NetworkScanner struct {
@@ -120,7 +123,11 @@ func (s *NetworkScanner) Scan() (*ScanResults, error) {
 				resultsMu.Unlock()
 
 				if s.config.Verbose && result.Status == PortOpen {
-					fmt.Printf("\r[+] Port %d is %s (%v)\n", port, result.Status, result.Latency)
+					if result.Service != "" && result.Service != "unknown" {
+						fmt.Printf("\r[+] Port %d is %s - %s (%v)\n", port, result.Status, result.Service, result.Latency)
+					} else {
+						fmt.Printf("\r[+] Port %d is %s (%v)\n", port, result.Status, result.Latency)
+					}
 				}
 			}
 		}()
@@ -163,12 +170,57 @@ func (s *NetworkScanner) scanPort(port int) PortResult {
 		}
 		return result
 	}
+	defer conn.Close()
 
-	conn.Close()
+	conn.SetDeadline(time.Now().Add(s.config.Timeout))
+
 	result.Status = PortOpen
-	result.Service = IdentifyService(port, conn)
+
+	if s.config.ServiceDetect {
+		service, banner := s.detectServiceWithBanner(conn, port)
+		result.Service = service
+		result.Banner = banner
+	} else {
+		result.Service = IdentifyService(port, conn)
+	}
 
 	return result
+}
+
+func (s *NetworkScanner) detectServiceWithBanner(conn net.Conn, port int) (string, string) {
+	grabber := NewBannerGrabber(conn, s.config.Timeout)
+
+	banner, err := grabber.Grab()
+	if err != nil {
+		probe := getProtocolProbe(port)
+		if len(probe) > 0 {
+			banner, err = grabber.GrabWithProbe(probe)
+			if err != nil {
+				service := IdentifyService(port, nil)
+				return service, ""
+			}
+		} else {
+			service := IdentifyService(port, nil)
+			return service, ""
+		}
+	}
+
+	banner = truncateBanner(banner)
+	service := matchServiceFromBanner(banner, port)
+
+	if service == "unknown" {
+		service = IdentifyService(port, nil)
+	}
+
+	return service, banner
+}
+
+func truncateBanner(banner string) string {
+	banner = strings.TrimSpace(banner)
+	if len(banner) > 200 {
+		banner = banner[:200] + "..."
+	}
+	return banner
 }
 
 func (s *NetworkScanner) GetProgress() (int, int) {

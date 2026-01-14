@@ -2,6 +2,7 @@ package tests
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"strings"
 	"testing"
@@ -501,6 +502,260 @@ func TestGetCommonPorts(t *testing.T) {
 	if len(ports) == 0 {
 		t.Error("GetCommonPorts() returned no ports")
 	}
+}
+
+func TestBannerGrabber(t *testing.T) {
+	mockConn := &mockConn{
+		readData: []byte("SSH-2.0-OpenSSH_8.0\r\n"),
+	}
+
+	grabber := scanner.NewBannerGrabber(mockConn, 1*time.Second)
+	banner, err := grabber.Grab()
+
+	if err != nil {
+		t.Errorf("Grab() error = %v", err)
+		return
+	}
+
+	if !strings.Contains(banner, "SSH") {
+		t.Errorf("Grab() banner = %v, want SSH", banner)
+	}
+}
+
+func TestBannerGrabberWithProbe(t *testing.T) {
+	mockConn := &mockConn{
+		readData: []byte("HTTP/1.1 200 OK\r\nServer: nginx\r\n\r\n"),
+	}
+
+	grabber := scanner.NewBannerGrabber(mockConn, 1*time.Second)
+	probe := []byte("GET / HTTP/1.0\r\n\r\n")
+	banner, err := grabber.GrabWithProbe(probe)
+
+	if err != nil {
+		t.Errorf("GrabWithProbe() error = %v", err)
+		return
+	}
+
+	if !strings.Contains(banner, "HTTP") {
+		t.Errorf("GrabWithProbe() banner = %v, want HTTP", banner)
+	}
+}
+
+func TestMatchServiceFromBanner(t *testing.T) {
+	tests := []struct {
+		name    string
+		banner  string
+		port    int
+		want    string
+	}{
+		{
+			name:   "SSH banner",
+			banner: "SSH-2.0-OpenSSH_8.0",
+			port:   22,
+			want:   "ssh",
+		},
+		{
+			name:   "FTP banner",
+			banner: "220 vsftpd 3.0.3",
+			port:   21,
+			want:   "ftp",
+		},
+		{
+			name:   "HTTP nginx",
+			banner: "HTTP/1.1 200 OK\r\nServer: nginx/1.18.0",
+			port:   80,
+			want:   "http",
+		},
+		{
+			name:   "HTTP apache",
+			banner: "HTTP/1.1 200 OK\r\nServer: Apache/2.4.41",
+			port:   80,
+			want:   "http",
+		},
+		{
+			name:   "SMTP banner",
+			banner: "220 mail.example.com ESMTP Postfix",
+			port:   25,
+			want:   "smtp",
+		},
+		{
+			name:   "MySQL banner",
+			banner: "5.7.32-0ubuntu0.18.04.1",
+			port:   3306,
+			want:   "mysql",
+		},
+		{
+			name:   "Redis banner",
+			banner: "REDIS",
+			port:   6379,
+			want:   "redis",
+		},
+		{
+			name:   "Elasticsearch banner",
+			banner: "Elasticsearch/7.10.0",
+			port:   9200,
+			want:   "elasticsearch",
+		},
+		{
+			name:   "MongoDB banner",
+			banner: "MongoDB",
+			port:   27017,
+			want:   "mongodb",
+		},
+		{
+			name:   "Unknown banner",
+			banner: "Some unknown service",
+			port:   12345,
+			want:   "unknown",
+		},
+		{
+			name:   "Empty banner",
+			banner: "",
+			port:   80,
+			want:   "unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := matchServiceFromBanner(tt.banner, tt.port)
+			if got != tt.want {
+				t.Errorf("matchServiceFromBanner(%q, %d) = %v, want %v", tt.banner, tt.port, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetProtocolProbe(t *testing.T) {
+	tests := []struct {
+		port     int
+		wantNil  bool
+		wantLen  int
+	}{
+		{80, false, 30},
+		{443, false, 30},
+		{21, false, 6},
+		{22, false, 2},
+		{3306, false, 39},
+		{5432, false, 8},
+		{6379, false, 6},
+		{99999, true, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("port_%d", tt.port), func(t *testing.T) {
+			probe := getProtocolProbe(tt.port)
+			if tt.wantNil && probe != nil {
+				t.Errorf("getProtocolProbe(%d) = %v, want nil", tt.port, probe)
+			}
+			if !tt.wantNil && probe == nil {
+				t.Errorf("getProtocolProbe(%d) = nil, want probe", tt.port)
+			}
+			if !tt.wantNil && len(probe) != tt.wantLen {
+				t.Errorf("getProtocolProbe(%d) len = %d, want %d", tt.port, len(probe), tt.wantLen)
+			}
+		})
+	}
+}
+
+func TestTruncateBanner(t *testing.T) {
+	shortBanner := "SSH-2.0-OpenSSH_8.0"
+	longBanner := strings.Repeat("A", 300)
+
+	truncated := truncateBanner(shortBanner)
+	if truncated != shortBanner {
+		t.Errorf("truncateBanner(short) = %v, want %v", truncated, shortBanner)
+	}
+
+	truncated = truncateBanner(longBanner)
+	if len(truncated) > 203 {
+		t.Errorf("truncateBanner(long) len = %d, want <= 203", len(truncated))
+	}
+	if !strings.HasSuffix(truncated, "...") {
+		t.Errorf("truncateBanner(long) missing ... suffix")
+	}
+}
+
+func TestGetServiceBanner(t *testing.T) {
+	mockConn := &mockConn{
+		readData: []byte("Test Banner"),
+	}
+
+	banner, err := scanner.GetServiceBanner(mockConn, 1*time.Second)
+	if err != nil {
+		t.Errorf("GetServiceBanner() error = %v", err)
+		return
+	}
+
+	if banner != "Test Banner" {
+		t.Errorf("GetServiceBanner() = %v, want Test Banner", banner)
+	}
+}
+
+func TestGetServiceBannerNilConn(t *testing.T) {
+	_, err := scanner.GetServiceBanner(nil, 1*time.Second)
+	if err == nil {
+		t.Error("GetServiceBanner(nil) error = nil, want error")
+	}
+}
+
+func TestBannerGrabberNilConn(t *testing.T) {
+	grabber := scanner.NewBannerGrabber(nil, 1*time.Second)
+	_, err := grabber.Grab()
+	if err == nil {
+		t.Error("BannerGrabber.Grab() with nil conn error = nil, want error")
+	}
+}
+
+func TestBannerGrabberNilConnWithProbe(t *testing.T) {
+	grabber := scanner.NewBannerGrabber(nil, 1*time.Second)
+	_, err := grabber.GrabWithProbe([]byte("probe"))
+	if err == nil {
+		t.Error("BannerGrabber.GrabWithProbe() with nil conn error = nil, want error")
+	}
+}
+
+type mockConn struct {
+	readData []byte
+	writeData []byte
+}
+
+func (m *mockConn) Read(b []byte) (n int, err error) {
+	if len(m.readData) == 0 {
+		return 0, fmt.Errorf("no data")
+	}
+	n = copy(b, m.readData)
+	m.readData = m.readData[n:]
+	return n, nil
+}
+
+func (m *mockConn) Write(b []byte) (n int, err error) {
+	m.writeData = append(m.writeData, b...)
+	return len(b), nil
+}
+
+func (m *mockConn) Close() error {
+	return nil
+}
+
+func (m *mockConn) LocalAddr() net.Addr {
+	return nil
+}
+
+func (m *mockConn) RemoteAddr() net.Addr {
+	return nil
+}
+
+func (m *mockConn) SetDeadline(t time.Time) error {
+	return nil
+}
+
+func (m *mockConn) SetReadDeadline(t time.Time) error {
+	return nil
+}
+
+func (m *mockConn) SetWriteDeadline(t time.Time) error {
+	return nil
 }
 
 func TestPortResult(t *testing.T) {
