@@ -27,6 +27,7 @@ var (
 	portRange    string
 	timeoutSec   int
 	concurrency  int
+	maxRetries   int
 	outputFormat string
 	outputFile   string
 	verbose      bool
@@ -41,6 +42,7 @@ func init() {
 	flag.StringVar(&portRange, "range", "", "Port range to scan (e.g., 1-1000)")
 	flag.IntVar(&timeoutSec, "timeout", 2, "Connection timeout in seconds")
 	flag.IntVar(&concurrency, "concurrency", 50, "Number of concurrent connections")
+	flag.IntVar(&maxRetries, "max-retries", 3, "Maximum retry attempts for connection timeouts")
 	flag.StringVar(&outputFormat, "format", "text", "Output format: text, json, csv")
 	flag.StringVar(&outputFile, "output", "", "Output file path (default: stdout)")
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose output")
@@ -86,6 +88,7 @@ func main() {
 		fmt.Printf("Ports: %d ports to scan\n", len(ports))
 		fmt.Printf("Timeout: %v\n", timeout)
 		fmt.Printf("Concurrency: %d\n", concurrency)
+		fmt.Printf("Max Retries: %d\n", maxRetries)
 		fmt.Println(strings.Repeat("-", 50))
 	}
 
@@ -109,6 +112,7 @@ func main() {
 		Concurrency:   concurrency,
 		Verbose:       verbose,
 		ServiceDetect: serviceDetect,
+		MaxRetries:    maxRetries,
 	}
 
 	netScanner := scanner.NewNetworkScanner(scannerConfig)
@@ -137,12 +141,12 @@ func main() {
 	}
 
 	reportData := report.ReportData{
-		Target:        targetHost,
-		TargetIP:      ipAddr,
-		ScanTime:      time.Now(),
-		OpenPorts:     results.OpenPorts,
-		ClosedPorts:   results.ClosedPorts,
-		FilteredPorts: results.FilteredPorts,
+		Target:          targetHost,
+		TargetIP:        ipAddr,
+		ScanTime:        time.Now(),
+		OpenPorts:       results.OpenPorts,
+		ClosedPorts:     results.ClosedPorts,
+		FilteredPorts:   results.FilteredPorts,
 		Vulnerabilities: vulnerabilities,
 	}
 

@@ -53,6 +53,7 @@ type Config struct {
 	Concurrency   int
 	Verbose       bool
 	ServiceDetect bool
+	MaxRetries    int
 }
 
 type NetworkScanner struct {
@@ -68,6 +69,9 @@ func NewNetworkScanner(config Config) *NetworkScanner {
 	}
 	if config.Timeout <= 0 {
 		config.Timeout = 2 * time.Second
+	}
+	if config.MaxRetries <= 0 {
+		config.MaxRetries = 3
 	}
 
 	return &NetworkScanner{
@@ -151,6 +155,35 @@ func (s *NetworkScanner) Scan() (*ScanResults, error) {
 }
 
 func (s *NetworkScanner) scanPort(port int) PortResult {
+	var result PortResult
+	var lastErr error
+
+	for attempt := 0; attempt < s.config.MaxRetries; attempt++ {
+		if s.IsStopped() {
+			return PortResult{Port: port, Status: PortFiltered}
+		}
+
+		result = s.scanPortOnce(port)
+		lastErr = nil
+
+		// If port is open or closed, no need to retry
+		if result.Status == PortOpen || result.Status == PortClosed {
+			return result
+		}
+
+		// Only retry on timeout (filtered)
+		if result.Status == PortFiltered {
+			// Small delay before retry to avoid overwhelming the network
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+	}
+
+	_ = lastErr
+	return result
+}
+
+func (s *NetworkScanner) scanPortOnce(port int) PortResult {
 	startTime := time.Now()
 
 	address := fmt.Sprintf("%s:%d", s.config.TargetIP, port)
@@ -250,6 +283,7 @@ func QuickScan(host string, ports []int, timeout time.Duration) (*ScanResults, e
 		Timeout:     timeout,
 		Concurrency: 100,
 		Verbose:     false,
+		MaxRetries:  3,
 	}
 
 	scanner := NewNetworkScanner(config)
