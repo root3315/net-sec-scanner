@@ -3,6 +3,7 @@ package scanner
 import (
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -262,13 +263,9 @@ func (s *NetworkScanner) GetProgress() (int, int) {
 
 func sortResults(results *ScanResults) {
 	sortByPort := func(ports []PortResult) {
-		for i := 0; i < len(ports)-1; i++ {
-			for j := i + 1; j < len(ports); j++ {
-				if ports[i].Port > ports[j].Port {
-					ports[i], ports[j] = ports[j], ports[i]
-				}
-			}
-		}
+		sort.Slice(ports, func(i, j int) bool {
+			return ports[i].Port < ports[j].Port
+		})
 	}
 
 	sortByPort(results.OpenPorts)
