@@ -169,7 +169,15 @@ func main() {
 		fmt.Println(reportOutput)
 	}
 
-	printSummary(results)
+	printSummary(results, timeout)
+}
+
+func ParsePorts(portList, portRange string) ([]int, error) {
+	return parsePorts(portList, portRange)
+}
+
+func ExpandRange(rangeStr string) ([]int, error) {
+	return expandRange(rangeStr)
 }
 
 func parsePorts(portList, portRange string) ([]int, error) {
@@ -314,7 +322,7 @@ func generateReport(data report.ReportData, format string) (string, error) {
 	}
 }
 
-func printSummary(results scanner.ScanResults) {
+func printSummary(results *scanner.ScanResults, timeout time.Duration) {
 	fmt.Println(strings.Repeat("-", 50))
 	fmt.Printf("Scan Summary:\n")
 	fmt.Printf("  Open ports:     %d\n", len(results.OpenPorts))
@@ -326,7 +334,7 @@ func printSummary(results scanner.ScanResults) {
 		for _, port := range results.OpenPorts {
 			service := port.Service
 			if service == "" {
-				service = scanner.IdentifyService(port.Port, nil)
+				service = scanner.IdentifyService(port.Port, nil, timeout)
 			}
 			if port.Banner != "" {
 				fmt.Printf("  %d/tcp\t%s\t[%s]\n", port.Port, service, port.Banner)

@@ -279,7 +279,7 @@ var servicePatterns = []struct {
 	{regexp.MustCompile(`(?i)^gpg`), "gpg"},
 	{regexp.MustCompile(`(?i)^pgp`), "gpg"},
 	{regexp.MustCompile(`(?i)^gnupg`), "gpg"},
-	{regexp.MustCompile(`(?i)^tor`), "tor"),
+	{regexp.MustCompile(`(?i)^tor`), "tor"},
 	{regexp.MustCompile(`(?i)^onion`), "tor"},
 	{regexp.MustCompile(`(?i)^proxy`), "proxy"},
 	{regexp.MustCompile(`(?i)^socks`), "socks"},
@@ -327,13 +327,13 @@ var servicePatterns = []struct {
 	{regexp.MustCompile(`(?i)^weathermap`), "cacti"},
 }
 
-func IdentifyService(port int, conn net.Conn) string {
+func IdentifyService(port int, conn net.Conn, timeout time.Duration) string {
 	if service, ok := wellKnownServices[port]; ok {
 		return service
 	}
 
 	if conn != nil {
-		return detectServiceFromBanner(conn, port)
+		return detectServiceFromBanner(conn, port, timeout)
 	}
 
 	return "unknown"
@@ -404,12 +404,12 @@ func (bg *BannerGrabber) GrabWithProbe(probe []byte) (string, error) {
 	return bg.Grab()
 }
 
-func detectServiceFromBanner(conn net.Conn, port int) string {
+func detectServiceFromBanner(conn net.Conn, port int, timeout time.Duration) string {
 	if conn == nil {
 		return "unknown"
 	}
 
-	grabber := NewBannerGrabber(conn, 2*time.Second)
+	grabber := NewBannerGrabber(conn, timeout)
 
 	banner, err := grabber.Grab()
 	if err != nil {
@@ -469,6 +469,18 @@ func getProtocolProbe(port int) []byte {
 		return probe
 	}
 	return nil
+}
+
+func MatchServiceFromBanner(banner string, port int) string {
+	return matchServiceFromBanner(banner, port)
+}
+
+func GetProtocolProbe(port int) []byte {
+	return getProtocolProbe(port)
+}
+
+func TruncateBanner(banner string) string {
+	return truncateBanner(banner)
 }
 
 func matchServiceFromBanner(banner string, port int) string {
