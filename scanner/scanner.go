@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net"
 	"sort"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -215,7 +214,7 @@ func (s *NetworkScanner) scanPortOnce(port int) PortResult {
 		result.Service = service
 		result.Banner = banner
 	} else {
-		result.Service = IdentifyService(port, conn)
+		result.Service = IdentifyService(port, conn, s.config.Timeout)
 	}
 
 	return result
@@ -230,11 +229,11 @@ func (s *NetworkScanner) detectServiceWithBanner(conn net.Conn, port int) (strin
 		if len(probe) > 0 {
 			banner, err = grabber.GrabWithProbe(probe)
 			if err != nil {
-				service := IdentifyService(port, nil)
+				service := IdentifyService(port, nil, s.config.Timeout)
 				return service, ""
 			}
 		} else {
-			service := IdentifyService(port, nil)
+			service := IdentifyService(port, nil, s.config.Timeout)
 			return service, ""
 		}
 	}
@@ -243,18 +242,10 @@ func (s *NetworkScanner) detectServiceWithBanner(conn net.Conn, port int) (strin
 	service := matchServiceFromBanner(banner, port)
 
 	if service == "unknown" {
-		service = IdentifyService(port, nil)
+		service = IdentifyService(port, nil, s.config.Timeout)
 	}
 
 	return service, banner
-}
-
-func truncateBanner(banner string) string {
-	banner = strings.TrimSpace(banner)
-	if len(banner) > 200 {
-		banner = banner[:200] + "..."
-	}
-	return banner
 }
 
 func (s *NetworkScanner) GetProgress() (int, int) {

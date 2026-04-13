@@ -12,125 +12,6 @@ import (
 	"net-sec-scanner/scanner"
 )
 
-func TestParsePorts(t *testing.T) {
-	tests := []struct {
-		name      string
-		portList  string
-		portRange string
-		wantCount int
-		wantErr   bool
-	}{
-		{
-			name:      "single port",
-			portList:  "80",
-			portRange: "",
-			wantCount: 1,
-			wantErr:   false,
-		},
-		{
-			name:      "multiple ports",
-			portList:  "80,443,8080",
-			portRange: "",
-			wantCount: 3,
-			wantErr:   false,
-		},
-		{
-			name:      "port range",
-			portList:  "",
-			portRange: "1-10",
-			wantCount: 10,
-			wantErr:   false,
-		},
-		{
-			name:      "combined",
-			portList:  "22,80",
-			portRange: "100-110",
-			wantCount: 13,
-			wantErr:   false,
-		},
-		{
-			name:      "invalid port",
-			portList:  "abc",
-			portRange: "",
-			wantCount: 0,
-			wantErr:   true,
-		},
-		{
-			name:      "port out of range",
-			portList:  "70000",
-			portRange: "",
-			wantCount: 0,
-			wantErr:   true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ports, err := parsePorts(tt.portList, tt.portRange)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parsePorts() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && len(ports) != tt.wantCount {
-				t.Errorf("parsePorts() got %d ports, want %d", len(ports), tt.wantCount)
-			}
-		})
-	}
-}
-
-func TestExpandRange(t *testing.T) {
-	tests := []struct {
-		name      string
-		rangeStr  string
-		wantCount int
-		wantErr   bool
-	}{
-		{
-			name:      "valid range",
-			rangeStr:  "1-10",
-			wantCount: 10,
-			wantErr:   false,
-		},
-		{
-			name:      "single value range",
-			rangeStr:  "80-80",
-			wantCount: 1,
-			wantErr:   false,
-		},
-		{
-			name:      "reversed range",
-			rangeStr:  "100-1",
-			wantCount: 100,
-			wantErr:   false,
-		},
-		{
-			name:      "invalid format",
-			rangeStr:  "1-10-20",
-			wantCount: 0,
-			wantErr:   true,
-		},
-		{
-			name:      "invalid start",
-			rangeStr:  "abc-10",
-			wantCount: 0,
-			wantErr:   true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ports, err := expandRange(tt.rangeStr)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("expandRange() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && len(ports) != tt.wantCount {
-				t.Errorf("expandRange() got %d ports, want %d", len(ports), tt.wantCount)
-			}
-		})
-	}
-}
-
 func TestIdentifyService(t *testing.T) {
 	tests := []struct {
 		name string
@@ -166,7 +47,7 @@ func TestIdentifyService(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := scanner.IdentifyService(tt.port, nil)
+			got := scanner.IdentifyService(tt.port, nil, 0)
 			if got != tt.want {
 				t.Errorf("IdentifyService(%d) = %v, want %v", tt.port, got, tt.want)
 			}
@@ -618,9 +499,9 @@ func TestMatchServiceFromBanner(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := matchServiceFromBanner(tt.banner, tt.port)
+			got := scanner.MatchServiceFromBanner(tt.banner, tt.port)
 			if got != tt.want {
-				t.Errorf("matchServiceFromBanner(%q, %d) = %v, want %v", tt.banner, tt.port, got, tt.want)
+				t.Errorf("MatchServiceFromBanner(%q, %d) = %v, want %v", tt.banner, tt.port, got, tt.want)
 			}
 		})
 	}
@@ -644,15 +525,15 @@ func TestGetProtocolProbe(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("port_%d", tt.port), func(t *testing.T) {
-			probe := getProtocolProbe(tt.port)
+			probe := scanner.GetProtocolProbe(tt.port)
 			if tt.wantNil && probe != nil {
-				t.Errorf("getProtocolProbe(%d) = %v, want nil", tt.port, probe)
+				t.Errorf("GetProtocolProbe(%d) = %v, want nil", tt.port, probe)
 			}
 			if !tt.wantNil && probe == nil {
-				t.Errorf("getProtocolProbe(%d) = nil, want probe", tt.port)
+				t.Errorf("GetProtocolProbe(%d) = nil, want probe", tt.port)
 			}
 			if !tt.wantNil && len(probe) != tt.wantLen {
-				t.Errorf("getProtocolProbe(%d) len = %d, want %d", tt.port, len(probe), tt.wantLen)
+				t.Errorf("GetProtocolProbe(%d) len = %d, want %d", tt.port, len(probe), tt.wantLen)
 			}
 		})
 	}
@@ -662,17 +543,17 @@ func TestTruncateBanner(t *testing.T) {
 	shortBanner := "SSH-2.0-OpenSSH_8.0"
 	longBanner := strings.Repeat("A", 300)
 
-	truncated := truncateBanner(shortBanner)
+	truncated := scanner.TruncateBanner(shortBanner)
 	if truncated != shortBanner {
-		t.Errorf("truncateBanner(short) = %v, want %v", truncated, shortBanner)
+		t.Errorf("TruncateBanner(short) = %v, want %v", truncated, shortBanner)
 	}
 
-	truncated = truncateBanner(longBanner)
+	truncated = scanner.TruncateBanner(longBanner)
 	if len(truncated) > 203 {
-		t.Errorf("truncateBanner(long) len = %d, want <= 203", len(truncated))
+		t.Errorf("TruncateBanner(long) len = %d, want <= 203", len(truncated))
 	}
 	if !strings.HasSuffix(truncated, "...") {
-		t.Errorf("truncateBanner(long) missing ... suffix")
+		t.Errorf("TruncateBanner(long) missing ... suffix")
 	}
 }
 

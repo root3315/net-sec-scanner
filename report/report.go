@@ -98,7 +98,7 @@ func convertToPortRecords(ports []scanner.PortResult) []PortRecord {
 	for i, port := range ports {
 		service := port.Service
 		if service == "" {
-			service = scanner.IdentifyService(port.Port, nil)
+			service = scanner.IdentifyService(port.Port, nil, 2*time.Second)
 		}
 		records[i] = PortRecord{
 			Port:    port.Port,
@@ -140,7 +140,7 @@ func ToText(data ReportData) (string, error) {
 		for _, port := range data.OpenPorts {
 			service := port.Service
 			if service == "" {
-				service = scanner.IdentifyService(port.Port, nil)
+				service = scanner.IdentifyService(port.Port, nil, 2*time.Second)
 			}
 			sb.WriteString(fmt.Sprintf("%-8d %-15s %-12s %v\n",
 				port.Port, port.Status.String(), service, port.Latency))
@@ -200,7 +200,7 @@ func ToCSV(data ReportData) (string, error) {
 	writePortRecord := func(port scanner.PortResult) error {
 		service := port.Service
 		if service == "" {
-			service = scanner.IdentifyService(port.Port, nil)
+			service = scanner.IdentifyService(port.Port, nil, 2*time.Second)
 		}
 
 		record := []string{
